@@ -6,3 +6,4 @@ def test_sim_stack_launch_mentions_robot_control_and_spawn_flow():
 
     assert "robot_control.launch.py" in launch_text
     assert "spawn" in launch_text.lower()
+    assert "-s" in launch_text

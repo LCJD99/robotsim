@@ -6,7 +6,9 @@ import yaml
 def test_bridge_topics_include_required_topics():
     config = yaml.safe_load(Path("src/sim_bringup/config/bridge_topics.yaml").read_text(encoding="utf-8"))
 
-    topics = {bridge["ros_topic_name"] for bridge in config["bridges"]}
+    assert isinstance(config, list)
+
+    topics = {bridge["ros_topic_name"] for bridge in config}
 
     assert topics >= {
         "/clock",

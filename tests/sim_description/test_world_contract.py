@@ -8,7 +8,9 @@ def test_dynamic_dense_world_contains_many_dynamic_obstacles():
 
     root = ET.fromstring(world_path.read_text(encoding='utf-8'))
     models = root.findall('.//world/model')
-    moving = [model for model in models if model.find("plugin[@name='moving_obstacle']") is not None]
+    moving = [model for model in models if model.attrib.get("name", "").startswith("moving_")]
+    custom_plugins = root.findall(".//plugin[@filename='libMovingObstacle.so']")
 
     assert len(models) >= 12
     assert len(moving) >= 6
+    assert len(custom_plugins) == 0

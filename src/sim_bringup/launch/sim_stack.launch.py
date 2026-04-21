@@ -28,7 +28,7 @@ def generate_launch_description() -> LaunchDescription:
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("ros_gz_sim"), "launch", "gz_sim.launch.py"])
         ),
-        launch_arguments={"gz_args": ["-r ", world]}.items(),
+        launch_arguments={"gz_args": ["-r -s ", world]}.items(),
     )
 
     bridge = Node(
