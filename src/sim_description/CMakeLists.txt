@@ -3,7 +3,7 @@ project(sim_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY worlds
+install(DIRECTORY worlds models
   DESTINATION share/${PROJECT_NAME}
 )
 

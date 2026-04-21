@@ -9,6 +9,9 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description() -> LaunchDescription:
     world = LaunchConfiguration("world")
     bridge_config = PathJoinSubstitution([FindPackageShare("sim_bringup"), "config", "bridge_topics.yaml"])
+    turtlebot_model = PathJoinSubstitution(
+        [FindPackageShare("sim_description"), "models", "turtlebot", "model.sdf"]
+    )
     robot_control = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution([FindPackageShare("robot_control"), "launch", "robot_control.launch.py"])
@@ -17,7 +20,7 @@ def generate_launch_description() -> LaunchDescription:
     spawn_turtlebot = Node(
         package="ros_gz_sim",
         executable="create",
-        arguments=["-name", "turtlebot", "-topic", "/robot_description"],
+        arguments=["-name", "turtlebot", "-file", turtlebot_model],
         output="screen",
     )
 
@@ -32,7 +35,7 @@ def generate_launch_description() -> LaunchDescription:
         package="ros_gz_bridge",
         executable="parameter_bridge",
         name="ros_gz_parameter_bridge",
-        arguments=["--ros-args", "--params-file", bridge_config],
+        parameters=[{"config_file": bridge_config}],
         output="screen",
     )
 
