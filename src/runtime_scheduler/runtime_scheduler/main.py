@@ -3,18 +3,16 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from runtime_scheduler.config import Config, load_config
 from runtime_scheduler.experiment_id import make_experiment_id
 from runtime_scheduler.runtime_loop import run_single_window
 from runtime_scheduler.workload_generator import PoissonLocalToolGenerator
 from telemetry.resource_sampler import make_resource_sample
 from telemetry.trace_sink import TraceSink
 
+CONFIG_PATH = Path("experiment_configs/v1_dynamic_dense.yaml")
 WINDOW_ID = "window-1"
 WINDOW_TIMESTAMP_US = 1_000_000
-ARRIVAL_LAMBDA_PER_SEC = 40.0
-ARRIVAL_WINDOW_MS = 50
-ARRIVAL_SEED = 42
-ARRIVAL_CAP = 8
 
 
 def _task_event_from_arrival(experiment_id: str, arrival: dict[str, object]) -> dict[str, object]:
@@ -35,14 +33,15 @@ def _task_event_from_arrival(experiment_id: str, arrival: dict[str, object]) -> 
     }
 
 
-def run_once_for_test(output_root: Path) -> None:
+def run_once_for_test(output_root: Path, config: Config | None = None) -> None:
+    runtime_config = config or load_config(CONFIG_PATH)
     experiment_id = make_experiment_id()
     sink = TraceSink(root_dir=output_root, experiment_id=experiment_id)
     generator = PoissonLocalToolGenerator(
-        lambda_per_sec=ARRIVAL_LAMBDA_PER_SEC,
-        window_ms=ARRIVAL_WINDOW_MS,
-        seed=ARRIVAL_SEED,
-        max_arrivals_per_window=ARRIVAL_CAP,
+        lambda_per_sec=runtime_config.agent_workload.local_tool.lambda_per_sec,
+        window_ms=runtime_config.scheduler.window_ms,
+        seed=runtime_config.agent_workload.seed,
+        max_arrivals_per_window=runtime_config.agent_workload.local_tool.max_arrivals_per_window,
     )
 
     timestamp_us = WINDOW_TIMESTAMP_US
@@ -56,8 +55,8 @@ def run_once_for_test(output_root: Path) -> None:
                 "window_id": WINDOW_ID,
                 "timestamp_us": timestamp_us,
                 "arrival_source": "poisson",
-                "generator_seed": ARRIVAL_SEED,
-                "lambda_per_sec": ARRIVAL_LAMBDA_PER_SEC,
+                "generator_seed": runtime_config.agent_workload.seed,
+                "lambda_per_sec": runtime_config.agent_workload.local_tool.lambda_per_sec,
             }
         ]
 
@@ -82,7 +81,8 @@ def run_once_for_test(output_root: Path) -> None:
 
 
 def main() -> None:
-    run_once_for_test(output_root=Path("traces"))
+    config = load_config(CONFIG_PATH)
+    run_once_for_test(output_root=config.trace.root_dir, config=config)
 
 
 if __name__ == "__main__":
