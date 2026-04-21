@@ -80,9 +80,65 @@ def run_once_for_test(output_root: Path, config: Config | None = None) -> None:
     )
 
 
+def run_experiment(output_root: Path, config: Config) -> None:
+    experiment_id = make_experiment_id()
+    sink = TraceSink(root_dir=output_root, experiment_id=experiment_id)
+    generator = PoissonLocalToolGenerator(
+        lambda_per_sec=config.agent_workload.local_tool.lambda_per_sec,
+        window_ms=config.scheduler.window_ms,
+        seed=config.agent_workload.seed,
+        max_arrivals_per_window=config.agent_workload.local_tool.max_arrivals_per_window,
+    )
+
+    total_windows = max(1, int((config.experiment.duration_sec * 1000) / config.scheduler.window_ms))
+    base_timestamp_us = int(time.time() * 1_000_000)
+    window_step_us = config.scheduler.window_ms * 1_000
+
+    for idx in range(total_windows):
+        window_id = f"window-{idx + 1}"
+        timestamp_us = base_timestamp_us + (idx * window_step_us)
+        arrivals = generator.next_arrivals(window_id=window_id, timestamp_us=timestamp_us)
+
+        # Ensure task_events file always exists for baseline trace completeness.
+        if idx == 0 and not arrivals:
+            arrivals = [
+                {
+                    "event_type": "TASK_ARRIVAL",
+                    "task_id": "local-tool-1",
+                    "request_id": "request-1",
+                    "window_id": window_id,
+                    "timestamp_us": timestamp_us,
+                    "arrival_source": "poisson",
+                    "generator_seed": config.agent_workload.seed,
+                    "lambda_per_sec": config.agent_workload.local_tool.lambda_per_sec,
+                }
+            ]
+
+        tasks = [{"task_id": arrival["task_id"], "priority_class": "ELASTIC"} for arrival in arrivals]
+        for arrival in arrivals:
+            sink.write("task_events", _task_event_from_arrival(experiment_id, arrival))
+
+        observation, plan, outcome = run_single_window(
+            window_id=window_id,
+            timestamp_us=timestamp_us,
+            tasks=tasks,
+        )
+        sink.write("window_observation", observation)
+        sink.write("plan", plan)
+        sink.write("outcome", outcome)
+        sink.write(
+            "resource_samples",
+            make_resource_sample(
+                experiment_id=experiment_id,
+                sample_id=f"sample-{idx + 1}",
+                timestamp_us=timestamp_us,
+            ),
+        )
+
+
 def main() -> None:
     config = load_config(CONFIG_PATH)
-    run_once_for_test(output_root=config.trace.root_dir, config=config)
+    run_experiment(output_root=config.trace.root_dir, config=config)
 
 
 if __name__ == "__main__":
