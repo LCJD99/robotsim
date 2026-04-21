@@ -1,0 +1,39 @@
+experiment:
+  duration_sec: 120
+  id_format: "%Y%m%d-%H%M%S"
+
+scenario:
+  type: dynamic_obstacle_dense
+
+scheduler:
+  impl: critical_first_fifo
+  window_ms: 50
+
+trigger:
+  impl: hybrid
+  cooldown_windows: 10
+
+agent:
+  enabled_task_types:
+    - LOCAL_TOOL
+
+agent_workload:
+  generator: poisson
+  seed: 42
+  local_tool:
+    lambda_per_sec: 4.0
+    max_arrivals_per_window: 8
+
+vee:
+  profile: edge_box_small
+  cpu:
+    cpuset: "0-7"
+    quota: "600000 1000000"
+  memory:
+    high: "6G"
+    max: "8G"
+  gpu:
+    provider: hami-core
+
+trace:
+  root_dir: traces
