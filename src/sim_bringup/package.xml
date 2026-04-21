@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>sim_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch and bridge orchestration for Gazebo simulation stack.</description>
+  <maintainer email="dev@example.com">robotsim</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>gazebo_ros</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>sim_description</exec_depend>
+</package>
