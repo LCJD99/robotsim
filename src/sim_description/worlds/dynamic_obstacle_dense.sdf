@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="dynamic_obstacle_dense">
+    <gravity>0 0 -9.8</gravity>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>30 30</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>30 30</size>
+            </plane>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+
+    <model name="obstacle_01"><pose>2 2 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+    <model name="obstacle_02"><pose>3 -2 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+    <model name="obstacle_03"><pose>-2 3 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+    <model name="obstacle_04"><pose>-3 -3 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+    <model name="obstacle_05"><pose>0 4 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+    <model name="obstacle_06"><pose>4 0 0.5 0 0 0</pose><link name="link"><collision name="collision"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></collision><visual name="visual"><geometry><box><size>0.5 0.5 1.0</size></box></geometry></visual></link></model>
+
+    <model name="moving_01"><pose>1 1 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+    <model name="moving_02"><pose>1 -1 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+    <model name="moving_03"><pose>-1 1 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+    <model name="moving_04"><pose>-1 -1 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+    <model name="moving_05"><pose>2 0 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+    <model name="moving_06"><pose>-2 0 0.2 0 0 0</pose><link name="link"><collision name="collision"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></collision><visual name="visual"><geometry><cylinder><radius>0.2</radius><length>0.4</length></cylinder></geometry></visual></link><plugin name="moving_obstacle" filename="libMovingObstacle.so"/></model>
+  </world>
+</sdf>
