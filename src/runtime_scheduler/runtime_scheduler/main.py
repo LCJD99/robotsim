@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import time
+from pathlib import Path
+
+from runtime_scheduler.experiment_id import make_experiment_id
+from runtime_scheduler.runtime_loop import run_single_window
+from runtime_scheduler.workload_generator import PoissonLocalToolGenerator
+from telemetry.resource_sampler import make_resource_sample
+from telemetry.trace_sink import TraceSink
+
+WINDOW_ID = "window-1"
+WINDOW_TIMESTAMP_US = 1_000_000
+ARRIVAL_LAMBDA_PER_SEC = 40.0
+ARRIVAL_WINDOW_MS = 50
+ARRIVAL_SEED = 42
+ARRIVAL_CAP = 8
+
+
+def _task_event_from_arrival(experiment_id: str, arrival: dict[str, object]) -> dict[str, object]:
+    return {
+        "schema_version": "v1",
+        "experiment_id": experiment_id,
+        "event_id": f"evt-{arrival['task_id']}",
+        "event_type": "TASK_ARRIVAL",
+        "timestamp_us": arrival["timestamp_us"],
+        "window_id": arrival["window_id"],
+        "task_id": arrival["task_id"],
+        "request_id": arrival["request_id"],
+        "task_type": "LOCAL_TOOL",
+        "source": "generator",
+        "arrival_source": arrival["arrival_source"],
+        "generator_seed": arrival["generator_seed"],
+        "lambda_per_sec": arrival["lambda_per_sec"],
+    }
+
+
+def run_once_for_test(output_root: Path) -> None:
+    experiment_id = make_experiment_id()
+    sink = TraceSink(root_dir=output_root, experiment_id=experiment_id)
+    generator = PoissonLocalToolGenerator(
+        lambda_per_sec=ARRIVAL_LAMBDA_PER_SEC,
+        window_ms=ARRIVAL_WINDOW_MS,
+        seed=ARRIVAL_SEED,
+        max_arrivals_per_window=ARRIVAL_CAP,
+    )
+
+    timestamp_us = WINDOW_TIMESTAMP_US
+    arrivals = generator.next_arrivals(window_id=WINDOW_ID, timestamp_us=timestamp_us)
+    if not arrivals:
+        arrivals = [
+            {
+                "event_type": "TASK_ARRIVAL",
+                "task_id": "local-tool-1",
+                "request_id": "request-1",
+                "window_id": WINDOW_ID,
+                "timestamp_us": timestamp_us,
+                "arrival_source": "poisson",
+                "generator_seed": ARRIVAL_SEED,
+                "lambda_per_sec": ARRIVAL_LAMBDA_PER_SEC,
+            }
+        ]
+
+    tasks = [{"task_id": arrival["task_id"], "priority_class": "ELASTIC"} for arrival in arrivals]
+
+    for arrival in arrivals:
+        sink.write("task_events", _task_event_from_arrival(experiment_id, arrival))
+
+    observation, plan, outcome = run_single_window(window_id=WINDOW_ID, timestamp_us=timestamp_us, tasks=tasks)
+    sink.write("window_observation", observation)
+    sink.write("plan", plan)
+    sink.write("outcome", outcome)
+
+    sink.write(
+        "resource_samples",
+        make_resource_sample(
+            experiment_id=experiment_id,
+            sample_id="sample-1",
+            timestamp_us=int(time.time() * 1_000_000),
+        ),
+    )
+
+
+def main() -> None:
+    run_once_for_test(output_root=Path("traces"))
+
+
+if __name__ == "__main__":
+    main()
