@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robotsim-runtime"
+version = "0.1.0"
+description = "Runtime platform trace implementation"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["src/runtime_scheduler", "src/telemetry", "src/infra"]
