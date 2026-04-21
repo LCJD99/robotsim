@@ -25,6 +25,10 @@ agent_workload:
     max_arrivals_per_window: 8
 
 vee:
+  apply_to:
+    - runtime_scheduler
+    - robot_control
+    - agent_workers
   profile: edge_box_small
   cpu:
     cpuset: "0-7"
