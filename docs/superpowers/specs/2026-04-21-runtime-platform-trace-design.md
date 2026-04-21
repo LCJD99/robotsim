@@ -213,7 +213,72 @@ trace:
 - `resource_samples` 含统一时间戳字段，支持窗口归并
 - 文件写入策略为 append-only JSONL
 
-## 10. 第一版验收标准
+## 10. JSONL Schema 合同（第一版强约束）
+### 10.1 通用格式约束
+- 每个 `*.jsonl` 文件一行一个 JSON object，编码为 UTF-8
+- 禁止跨行 JSON、禁止数组包裹、禁止注释
+- 数值字段必须写为 JSON number，布尔字段必须写为 JSON boolean
+- 禁止 `NaN`、`Infinity`、空字符串占位
+- 所有单位按字段后缀解释：
+  - `_ns` 纳秒
+  - `_us` 微秒
+  - `_ms` 毫秒
+  - `_bytes` 字节
+  - `_bps` bit/s
+
+### 10.2 三类核心文件的 schema 来源
+- `window_observation.jsonl`：每行必须满足 `SchedulerObservation(v1)`，字段定义以 [trace.md](/home/dawnat9/code-workspace/ai4heuristic/robotsim/docs/trace.md) 为准
+- `plan.jsonl`：每行必须满足 `SchedulePlan(v1)`，字段定义以 [trace.md](/home/dawnat9/code-workspace/ai4heuristic/robotsim/docs/trace.md) 为准
+- `outcome.jsonl`：每行必须满足 `ScheduleOutcome(v1)`，字段定义以 [trace.md](/home/dawnat9/code-workspace/ai4heuristic/robotsim/docs/trace.md) 为准
+
+### 10.3 task_events.jsonl 最小必填字段
+每行必须至少包含：
+- `schema_version`：固定 `v1`
+- `experiment_id`：`YYYYMMDD-HHMMSS`
+- `event_id`：全局唯一字符串
+- `event_type`：`TASK_ARRIVAL | TASK_ADMITTED | TASK_DISPATCHED | TASK_PREEMPTED | TASK_COMPLETED | TASK_DROPPED | TASK_CANCELED`
+- `timestamp_us`：事件时间戳（微秒）
+- `window_id`：所属调度窗口 ID
+- `task_id`：任务 ID
+- `request_id`：请求 ID
+- `task_type`：`CRITICAL_CONTROL | LOCAL_TOOL | REMOTE_API | EMBODIED_ACTION`
+- `source`：`runtime | scheduler | worker | generator`
+
+当 `event_type=TASK_ARRIVAL` 时，附加必填：
+- `arrival_source`：第一版固定 `poisson`
+- `generator_seed`：本次实验使用的随机种子（int）
+- `lambda_per_sec`：本次实验配置的 Poisson 参数（float）
+
+### 10.4 resource_samples.jsonl 最小必填字段
+每行必须至少包含：
+- `schema_version`：固定 `v1`
+- `experiment_id`：`YYYYMMDD-HHMMSS`
+- `sample_id`：全局唯一字符串
+- `timestamp_us`：采样时间戳（微秒）
+- `window_id`：可为空；若可归属窗口则必须填
+- `scope`：`system | vee | process`
+- `cpu.utilization_total`：float，范围 `[0, 1]`
+- `memory.used_bytes`：int64
+- `memory.available_bytes`：int64
+- `gpu.utilization`：float，范围 `[0, 1]`（无 GPU 时记 `0`）
+- `gpu.memory_used_bytes`：int64
+- `network.tx_rate_bps`：int64
+- `network.rx_rate_bps`：int64
+
+### 10.5 关联与基数约束
+- 在同一 `experiment_id` 下：
+  - `window_observation` 对每个 `window_id` 恰好 1 条
+  - `plan` 对每个 `window_id` 恰好 1 条
+  - `outcome` 对每个 `window_id` 恰好 1 条
+- `plan.window_id` 必须能在 `window_observation.window_id` 中找到
+- `outcome.window_id` 与 `outcome.plan_id` 必须能回指 `plan`
+- `task_events.window_id` 必须落在该实验存在的窗口集合中
+
+### 10.6 写入时序约束
+- 单窗口内建议写入顺序：`observation -> plan -> outcome`
+- `task_events` 与 `resource_samples` 可穿插写入，但必须保证 `timestamp_us` 单调非递减
+- 程序异常退出后，重启不得覆盖既有文件，仅允许 append
+## 11. 第一版验收标准
 满足以下条件即判定“平台跑通”：
 1. 在动态障碍密集场景连续运行 120s，不崩溃
 2. `robot_control` 控制循环持续运行且可观测
@@ -223,7 +288,7 @@ trace:
 6. 能基于 `window_id` 关联 observation/plan/outcome
 7. `task_events` 中可观察到 Poisson 生成的到达事件元数据
 
-## 11. 里程碑拆分（仅到平台完成）
+## 12. 里程碑拆分（仅到平台完成）
 - M1：配置与目录骨架完成（YAML + traces 组织）
 - M2：VEE 约束链路打通（CPU/Memory + hami-core）
 - M3：runtime 50ms 窗口闭环打通（obs/plan/outcome）
@@ -231,7 +296,7 @@ trace:
 - M5：LOCAL_TOOL 接入并形成可调度执行链路
 - M6：120s 端到端实验回归通过并固化基线配置
 
-## 12. 后续扩展边界（不属于本版）
+## 13. 后续扩展边界（不属于本版）
 - REMOTE_API 在线执行链路接入（服务端维持 VEE 外）
 - 策略对比与消融实验矩阵扩大
 - 离线 scheduler evolution 自动回放评估
