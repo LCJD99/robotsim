@@ -24,11 +24,33 @@ agent_workload:
     lambda_per_sec: 4.0
     max_arrivals_per_window: 8
 
+execution:
+  cmd_vel_topic: /cmd_vel
+  stop_on_non_run: true
+  mapping:
+    critical:
+      linear_x: 0.20
+      angular_z: 0.00
+    high:
+      linear_x: 0.12
+      angular_z: 0.15
+    best_effort:
+      linear_x: 0.08
+      angular_z: -0.10
+    fallback:
+      linear_x: 0.10
+      angular_z: 0.00
+
+sim:
+  world_name: dynamic_obstacle_dense
+  physics_step_ms: 1
+
 vee:
   apply_to:
     - runtime_scheduler
     - robot_control
     - agent_workers
+  enforcement_required: true
   profile: edge_box_small
   cpu:
     cpuset: "0-7"

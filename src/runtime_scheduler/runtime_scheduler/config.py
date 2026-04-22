@@ -6,6 +6,9 @@ from typing import Any, Mapping
 
 import yaml
 
+DEFAULT_SIM_WORLD_NAME = "dynamic_obstacle_dense"
+DEFAULT_SIM_PHYSICS_STEP_MS = 1
+
 
 @dataclass(frozen=True, slots=True)
 class ExperimentConfig:
@@ -49,6 +52,33 @@ class AgentWorkloadConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class VelocityConfig:
+    linear_x: float
+    angular_z: float
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionMappingConfig:
+    critical: VelocityConfig
+    high: VelocityConfig
+    best_effort: VelocityConfig
+    fallback: VelocityConfig
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionConfig:
+    cmd_vel_topic: str
+    stop_on_non_run: bool
+    mapping: ExecutionMappingConfig
+
+
+@dataclass(frozen=True, slots=True)
+class SimConfig:
+    world_name: str = DEFAULT_SIM_WORLD_NAME
+    physics_step_ms: int = DEFAULT_SIM_PHYSICS_STEP_MS
+
+
+@dataclass(frozen=True, slots=True)
 class VeeCpuConfig:
     cpuset: str
     quota: str
@@ -67,6 +97,8 @@ class VeeGpuConfig:
 
 @dataclass(frozen=True, slots=True)
 class VeeConfig:
+    apply_to: tuple[str, ...]
+    enforcement_required: bool
     profile: str
     cpu: VeeCpuConfig
     memory: VeeMemoryConfig
@@ -86,6 +118,8 @@ class Config:
     trigger: TriggerConfig
     agent: AgentConfig
     agent_workload: AgentWorkloadConfig
+    execution: ExecutionConfig
+    sim: SimConfig
     vee: VeeConfig
     trace: TraceConfig
 
@@ -114,10 +148,27 @@ def load_config(path: Path | str) -> Config:
     trigger = _require_mapping(raw, "trigger", "trigger")
     agent = _require_mapping(raw, "agent", "agent")
     agent_workload = _require_mapping(raw, "agent_workload", "agent_workload")
+    execution = _require_mapping(raw, "execution", "execution")
+    sim = raw.get("sim")
+    if sim is None:
+        sim_mapping: Mapping[str, Any] = {}
+    elif not isinstance(sim, Mapping):
+        raise ValueError("expected mapping at sim")
+    else:
+        sim_mapping = sim
     vee = _require_mapping(raw, "vee", "vee")
     trace = _require_mapping(raw, "trace", "trace")
 
     local_tool = _require_mapping(agent_workload, "local_tool", "agent_workload.local_tool")
+    execution_mapping = _require_mapping(execution, "mapping", "execution.mapping")
+    execution_critical = _require_mapping(execution_mapping, "critical", "execution.mapping.critical")
+    execution_high = _require_mapping(execution_mapping, "high", "execution.mapping.high")
+    execution_best_effort = _require_mapping(
+        execution_mapping,
+        "best_effort",
+        "execution.mapping.best_effort",
+    )
+    execution_fallback = _require_mapping(execution_mapping, "fallback", "execution.mapping.fallback")
     vee_cpu = _require_mapping(vee, "cpu", "vee.cpu")
     vee_memory = _require_mapping(vee, "memory", "vee.memory")
     vee_gpu = _require_mapping(vee, "gpu", "vee.gpu")
@@ -125,6 +176,9 @@ def load_config(path: Path | str) -> Config:
     enabled_task_types = _require_key(agent, "enabled_task_types", "agent.enabled_task_types")
     if not isinstance(enabled_task_types, list):
         raise ValueError("expected list at agent.enabled_task_types")
+    vee_apply_to = _require_key(vee, "apply_to", "vee.apply_to")
+    if not isinstance(vee_apply_to, list):
+        raise ValueError("expected list at vee.apply_to")
 
     return Config(
         experiment=ExperimentConfig(
@@ -161,7 +215,85 @@ def load_config(path: Path | str) -> Config:
                 ),
             ),
         ),
+        execution=ExecutionConfig(
+            cmd_vel_topic=str(_require_key(execution, "cmd_vel_topic", "execution.cmd_vel_topic")),
+            stop_on_non_run=bool(_require_key(execution, "stop_on_non_run", "execution.stop_on_non_run")),
+            mapping=ExecutionMappingConfig(
+                critical=VelocityConfig(
+                    linear_x=float(
+                        _require_key(
+                            execution_critical,
+                            "linear_x",
+                            "execution.mapping.critical.linear_x",
+                        )
+                    ),
+                    angular_z=float(
+                        _require_key(
+                            execution_critical,
+                            "angular_z",
+                            "execution.mapping.critical.angular_z",
+                        )
+                    ),
+                ),
+                high=VelocityConfig(
+                    linear_x=float(
+                        _require_key(
+                            execution_high,
+                            "linear_x",
+                            "execution.mapping.high.linear_x",
+                        )
+                    ),
+                    angular_z=float(
+                        _require_key(
+                            execution_high,
+                            "angular_z",
+                            "execution.mapping.high.angular_z",
+                        )
+                    ),
+                ),
+                best_effort=VelocityConfig(
+                    linear_x=float(
+                        _require_key(
+                            execution_best_effort,
+                            "linear_x",
+                            "execution.mapping.best_effort.linear_x",
+                        )
+                    ),
+                    angular_z=float(
+                        _require_key(
+                            execution_best_effort,
+                            "angular_z",
+                            "execution.mapping.best_effort.angular_z",
+                        )
+                    ),
+                ),
+                fallback=VelocityConfig(
+                    linear_x=float(
+                        _require_key(
+                            execution_fallback,
+                            "linear_x",
+                            "execution.mapping.fallback.linear_x",
+                        )
+                    ),
+                    angular_z=float(
+                        _require_key(
+                            execution_fallback,
+                            "angular_z",
+                            "execution.mapping.fallback.angular_z",
+                        )
+                    ),
+                ),
+            ),
+        ),
+        sim=SimConfig(
+            world_name=str(sim_mapping.get("world_name", DEFAULT_SIM_WORLD_NAME)),
+            physics_step_ms=int(sim_mapping.get("physics_step_ms", DEFAULT_SIM_PHYSICS_STEP_MS)),
+        ),
         vee=VeeConfig(
+            apply_to=tuple(str(value) for value in vee_apply_to),
+            enforcement_required=bool(
+                _require_key(vee, "enforcement_required", "vee.enforcement_required")
+            ),
             profile=str(_require_key(vee, "profile", "vee.profile")),
             cpu=VeeCpuConfig(
                 cpuset=str(_require_key(vee_cpu, "cpuset", "vee.cpu.cpuset")),
