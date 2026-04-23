@@ -24,6 +24,7 @@ from runtime_scheduler.config import (
     VeeMemoryConfig,
 )
 from runtime_scheduler.stepped_loop import SteppedExperimentLoop
+from runtime_scheduler.task_catalog import CONTROLLER_TASK_IDS
 from runtime_scheduler.workload_generator import PoissonLocalToolGenerator
 from telemetry.trace_sink import TraceSink
 
@@ -101,6 +102,54 @@ class RecordingExecutionAdapter:
     def execute_window(self, task_actions: list[dict[str, object]], now_ms: int) -> dict[str, object]:
         self.calls.append((task_actions, now_ms))
         return dict(self.payload)
+
+
+def test_loop_injects_controller_tasks_into_plan_and_task_events(tmp_path):
+    config = _make_config(duration_sec=1)
+    stepper = MockStepper(window_ms=50)
+    sampler = MockSampler()
+    sink = TraceSink(root_dir=tmp_path, experiment_id="test-exp-controller")
+    generator = PoissonLocalToolGenerator(
+        lambda_per_sec=0.0, window_ms=50, seed=0, max_arrivals_per_window=0
+    )
+    execution_adapter = RecordingExecutionAdapter()
+
+    loop = SteppedExperimentLoop(
+        stepper,
+        sampler,
+        generator,
+        sink,
+        config,
+        "test-exp-controller",
+        execution_adapter,
+    )
+    loop.run()
+
+    plan_file = tmp_path / "test-exp-controller" / "plan.jsonl"
+    first_plan = json.loads(plan_file.read_text(encoding="utf-8").splitlines()[0])
+    task_actions = {action["task_id"]: action for action in first_plan["task_actions"]}
+    for task_id in CONTROLLER_TASK_IDS:
+        assert task_id in task_actions
+        assert task_actions[task_id]["lane"] == "CRITICAL_LANE"
+
+    task_events_file = tmp_path / "test-exp-controller" / "task_events.jsonl"
+    task_events = [
+        json.loads(line)
+        for line in task_events_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    controller_events = [
+        event
+        for event in task_events
+        if event["task_type"] == "ROS_CONTROLLER_CYCLE" and event["window_id"] == "window-1"
+    ]
+    assert len(controller_events) == len(CONTROLLER_TASK_IDS)
+    for event in controller_events:
+        assert event["source"] == "controller_runtime"
+        assert event["event_type"] == "TASK_ARRIVAL"
+        assert event["arrival_source"] == "periodic_controller"
+        assert event["generator_seed"] == -1
+        assert event["lambda_per_sec"] == 0.0
 
 
 def test_loop_exits_after_correct_number_of_windows(tmp_path, monkeypatch):
@@ -195,7 +244,13 @@ def test_loop_writes_one_resource_sample_per_window(tmp_path, monkeypatch):
     generator = PoissonLocalToolGenerator(
         lambda_per_sec=0.0, window_ms=50, seed=0, max_arrivals_per_window=0
     )
-    execution_adapter = RecordingExecutionAdapter(payload={"success": True, "worker_ops": []})
+    execution_payload = {
+        "success": True,
+        "mode": "stepped_online",
+        "cmd_vel": {"type": "motion", "vx": 0.4, "wz": 0.1},
+        "worker_ops": [{"task_id": "local-tool-1", "op": "resume", "ok": True}],
+    }
+    execution_adapter = RecordingExecutionAdapter(payload=execution_payload)
 
     loop = SteppedExperimentLoop(
         stepper,
@@ -217,7 +272,11 @@ def test_loop_writes_one_resource_sample_per_window(tmp_path, monkeypatch):
     outcome_lines = [l for l in outcome_file.read_text(encoding="utf-8").splitlines() if l.strip()]
     assert len(outcome_lines) == 20
     first_outcome = json.loads(outcome_lines[0])
-    assert first_outcome["execution"] == {"success": True, "worker_ops": []}
+    assert first_outcome["execution"] == execution_payload
+
+    controller_cycle_file = tmp_path / "test-exp-2" / "controller_cycle_samples.jsonl"
+    controller_cycle_lines = [l for l in controller_cycle_file.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(controller_cycle_lines) == 40
 
 
 def test_run_stepped_experiment_wires_and_closes_stepper(tmp_path, monkeypatch):

@@ -21,6 +21,20 @@ class ExecutionAdapter:
         self._stop = stop
         self._velocity_mapping = velocity_mapping
 
+    @staticmethod
+    def _is_run_action(action: dict[str, Any]) -> bool:
+        if "decision" in action:
+            return action.get("decision") == "RUN"
+        return action.get("action") == "RUN"
+
+    @staticmethod
+    def _normalize_lane(lane: str) -> str:
+        if lane == "CRITICAL_LANE":
+            return "critical"
+        if lane == "CPU_LANE":
+            return "high"
+        return "fallback"
+
     def execute_window(
         self,
         task_actions: Sequence[dict[str, Any]],
@@ -31,11 +45,11 @@ class ExecutionAdapter:
         task_ids = [str(action["task_id"]) for action in task_actions]
         self._ensure(task_ids)
 
-        run_actions = [action for action in task_actions if action.get("action") == "RUN"]
+        run_actions = [action for action in task_actions if self._is_run_action(action)]
         worker_ops: list[dict[str, object]] = [{"op": "ensure", "task_ids": task_ids}]
 
         if run_actions:
-            lane = str(run_actions[0].get("lane", "fallback"))
+            lane = self._normalize_lane(str(run_actions[0].get("lane", "fallback")))
             vx, wz = self._velocity_mapping.get(lane, self._velocity_mapping["fallback"])
             self._cmd_vel_publisher.publish_motion(vx, wz)
             cmd_vel = {"type": "motion", "vx": vx, "wz": wz}
@@ -45,7 +59,7 @@ class ExecutionAdapter:
 
         for action in task_actions:
             task_id = str(action["task_id"])
-            if action.get("action") == "RUN":
+            if self._is_run_action(action):
                 self._resume(task_id)
                 worker_ops.append({"op": "resume", "task_id": task_id})
             else:

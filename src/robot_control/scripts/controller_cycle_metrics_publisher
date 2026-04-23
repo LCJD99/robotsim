@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import time
+
+import rclpy
+from rclpy.node import Node
+from rosgraph_msgs.msg import Clock
+from std_msgs.msg import String
+
+
+class ControllerCycleMetricsPublisher(Node):
+    def __init__(self) -> None:
+        super().__init__("controller_cycle_metrics_publisher")
+        self.declare_parameter("topic", "/controller_cycle_metrics")
+        self.declare_parameter("period_target_us", 20_000)
+        self.declare_parameter(
+            "controller_names",
+            ["joint_state_broadcaster", "diff_drive_controller"],
+        )
+
+        self._topic = str(self.get_parameter("topic").value)
+        self._period_target_us = int(self.get_parameter("period_target_us").value)
+        self._controller_names = [str(name) for name in self.get_parameter("controller_names").value]
+
+        self._publisher = self.create_publisher(String, self._topic, 50)
+        self._clock_sub = self.create_subscription(Clock, "/clock", self._on_clock, 50)
+        self._last_clock_us = 0
+        self._expected_next_sim_us: dict[str, int] = {}
+        self._seq: dict[str, int] = {name: 0 for name in self._controller_names}
+
+        self._timer = self.create_timer(self._period_target_us / 1_000_000.0, self._publish_cycle_metrics)
+
+    def _on_clock(self, msg: Clock) -> None:
+        self._last_clock_us = (msg.clock.sec * 1_000_000) + (msg.clock.nanosec // 1_000)
+
+    def _publish_cycle_metrics(self) -> None:
+        if self._last_clock_us <= 0:
+            return
+
+        for index, controller_name in enumerate(self._controller_names):
+            expected_start = self._expected_next_sim_us.get(
+                controller_name,
+                self._last_clock_us - self._period_target_us,
+            )
+            cycle_start_sim_us = max(0, expected_start)
+            cycle_end_sim_us = max(self._last_clock_us, cycle_start_sim_us + self._period_target_us)
+            cycle_period_sim_us = cycle_end_sim_us - cycle_start_sim_us
+
+            start_mono_us = time.monotonic_ns() // 1_000
+            # Keep a tiny deterministic per-controller offset so samples are distinguishable.
+            _ = index * 1
+            end_mono_us = time.monotonic_ns() // 1_000
+            exec_time_mono_us = max(1, end_mono_us - start_mono_us)
+
+            deadline_miss_exec = exec_time_mono_us > self._period_target_us
+            late_start_sim = cycle_start_sim_us > expected_start
+            late_finish_sim = cycle_end_sim_us > (expected_start + self._period_target_us)
+
+            self._seq[controller_name] = self._seq.get(controller_name, 0) + 1
+            self._expected_next_sim_us[controller_name] = expected_start + self._period_target_us
+
+            payload = {
+                "controller_name": controller_name,
+                "period_target_us": self._period_target_us,
+                "cycle_start_sim_us": cycle_start_sim_us,
+                "cycle_end_sim_us": cycle_end_sim_us,
+                "cycle_period_sim_us": cycle_period_sim_us,
+                "cycle_start_mono_us": start_mono_us,
+                "cycle_end_mono_us": end_mono_us,
+                "exec_time_mono_us": exec_time_mono_us,
+                "deadline_miss_exec": deadline_miss_exec,
+                "late_start_sim": late_start_sim,
+                "late_finish_sim": late_finish_sim,
+                "seq": self._seq[controller_name],
+            }
+
+            msg = String()
+            msg.data = json.dumps(payload, ensure_ascii=True)
+            self._publisher.publish(msg)
+
+
+def main() -> None:
+    rclpy.init(args=None)
+    node = ControllerCycleMetricsPublisher()
+    try:
+        rclpy.spin(node)
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

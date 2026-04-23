@@ -63,3 +63,51 @@ def test_task_arrival_requires_poisson_metadata():
     }
 
     validate_record("task_events", record)
+
+
+def test_controller_cycle_samples_record_is_valid():
+    record = {
+        "schema_version": "v1",
+        "experiment_id": "20260421-120000",
+        "window_id": "window-1",
+        "timestamp_us": 1_000_000,
+        "controller_name": "diff_drive_controller",
+        "period_target_us": 20_000,
+        "cycle_count": 2,
+        "exec_mono_us_p50": 5000,
+        "exec_mono_us_p95": 9000,
+        "exec_mono_us_max": 10000,
+        "period_sim_us_p50": 20000,
+        "period_sim_us_p95": 21000,
+        "period_sim_us_max": 21000,
+        "deadline_miss_exec_count": 1,
+        "late_start_sim_count": 0,
+        "late_finish_sim_count": 1,
+        "late_arrival_count": 0,
+    }
+
+    validate_record("controller_cycle_samples", record)
+
+
+def test_controller_cycle_samples_rejects_missing_required_key():
+    record = {
+        "schema_version": "v1",
+        "experiment_id": "20260421-120000",
+        "window_id": "window-1",
+        "timestamp_us": 1_000_000,
+        "controller_name": "diff_drive_controller",
+        "period_target_us": 20_000,
+        "cycle_count": 2,
+        "exec_mono_us_p50": 5000,
+        "exec_mono_us_p95": 9000,
+        "exec_mono_us_max": 10000,
+        "period_sim_us_p50": 20000,
+        "period_sim_us_p95": 21000,
+        "period_sim_us_max": 21000,
+        "deadline_miss_exec_count": 1,
+        "late_start_sim_count": 0,
+        "late_finish_sim_count": 1,
+    }
+
+    with pytest.raises(ValueError, match=r"controller_cycle_samples missing required key: late_arrival_count"):
+        validate_record("controller_cycle_samples", record)

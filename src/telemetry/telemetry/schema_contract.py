@@ -51,6 +51,25 @@ REQUIRED_KEYS = {
         "gpu",
         "network",
     ),
+    "controller_cycle_samples": (
+        "schema_version",
+        "experiment_id",
+        "window_id",
+        "timestamp_us",
+        "controller_name",
+        "period_target_us",
+        "cycle_count",
+        "exec_mono_us_p50",
+        "exec_mono_us_p95",
+        "exec_mono_us_max",
+        "period_sim_us_p50",
+        "period_sim_us_p95",
+        "period_sim_us_max",
+        "deadline_miss_exec_count",
+        "late_start_sim_count",
+        "late_finish_sim_count",
+        "late_arrival_count",
+    ),
 }
 
 

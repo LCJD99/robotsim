@@ -21,5 +21,4 @@ class VeeAdapter:
             f"echo {cpu['quota']} > /sys/fs/cgroup/vee/cpu.max",
             f"echo {memory['high']} > /sys/fs/cgroup/vee/memory.high",
             f"echo {memory['max']} > /sys/fs/cgroup/vee/memory.max",
-            "hami-core apply --group vee",
         ]

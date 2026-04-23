@@ -1,15 +1,28 @@
 from __future__ import annotations
 
+import os
 import time
 import warnings
 from pathlib import Path
 
 from runtime_scheduler.cmd_vel_publisher import CmdVelPublisher
 from runtime_scheduler.config import Config, load_config
+from runtime_scheduler.controller_cycle_aggregator import (
+    ControllerCycleAggregator,
+    DEFAULT_CONTROLLER_NAMES,
+    build_default_controller_cycle_records,
+)
+from runtime_scheduler.controller_cycle_source import TopicControllerCycleSource
 from runtime_scheduler.execution_adapter import ExecutionAdapter
 from runtime_scheduler.experiment_id import make_experiment_id
 from runtime_scheduler.runtime_loop import run_single_window
 from runtime_scheduler.stepped_loop import SteppedExperimentLoop
+from runtime_scheduler.task_catalog import (
+    build_controller_periodic_tasks,
+    build_controller_task_events,
+    build_local_tool_task,
+    build_local_tool_task_event,
+)
 from runtime_scheduler.vee_runtime_enforcer import VeeRuntimeEnforcer
 from runtime_scheduler.worker_manager import WorkerManager
 from runtime_scheduler.workload_generator import PoissonLocalToolGenerator
@@ -20,24 +33,34 @@ from telemetry.trace_sink import TraceSink
 CONFIG_PATH = Path("experiment_configs/v1_dynamic_dense.yaml")
 WINDOW_ID = "window-1"
 WINDOW_TIMESTAMP_US = 1_000_000
+_OFFLINE_FALLBACK_EXECUTION_MARKER: dict[str, object] | None = None
+DEFAULT_HAMI_CORE_LIB = Path("libs/libvgpu.so")
+LEGACY_HAMI_CORE_LIB = Path("ref/build/libvgpu.so")
 
 
-def _task_event_from_arrival(experiment_id: str, arrival: dict[str, object]) -> dict[str, object]:
-    return {
-        "schema_version": "v1",
-        "experiment_id": experiment_id,
-        "event_id": f"evt-{arrival['task_id']}",
-        "event_type": "TASK_ARRIVAL",
-        "timestamp_us": arrival["timestamp_us"],
-        "window_id": arrival["window_id"],
-        "task_id": arrival["task_id"],
-        "request_id": arrival["request_id"],
-        "task_type": "LOCAL_TOOL",
-        "source": "generator",
-        "arrival_source": arrival["arrival_source"],
-        "generator_seed": arrival["generator_seed"],
-        "lambda_per_sec": arrival["lambda_per_sec"],
-    }
+def _write_controller_cycle_samples(
+    *,
+    sink: TraceSink,
+    experiment_id: str,
+    window_id: str,
+    timestamp_us: int,
+    period_target_us: int,
+) -> None:
+    aggregator = ControllerCycleAggregator(
+        controller_names=DEFAULT_CONTROLLER_NAMES,
+        period_target_us=period_target_us,
+    )
+    records = build_default_controller_cycle_records(
+        window_start_us=timestamp_us,
+        period_target_us=period_target_us,
+    )
+    for sample in aggregator.aggregate_window(
+        experiment_id=experiment_id,
+        window_id=window_id,
+        timestamp_us=timestamp_us,
+        records=records,
+    ):
+        sink.write("controller_cycle_samples", sample)
 
 
 def run_once_for_test(output_root: Path, config: Config | None = None) -> None:
@@ -67,10 +90,17 @@ def run_once_for_test(output_root: Path, config: Config | None = None) -> None:
             }
         ]
 
-    tasks = [{"task_id": arrival["task_id"], "priority_class": "ELASTIC"} for arrival in arrivals]
+    tasks = [build_local_tool_task(arrival) for arrival in arrivals]
+    tasks.extend(build_controller_periodic_tasks(window_id=WINDOW_ID, timestamp_us=timestamp_us))
 
     for arrival in arrivals:
-        sink.write("task_events", _task_event_from_arrival(experiment_id, arrival))
+        sink.write("task_events", build_local_tool_task_event(experiment_id, arrival))
+    for controller_event in build_controller_task_events(
+        experiment_id=experiment_id,
+        window_id=WINDOW_ID,
+        timestamp_us=timestamp_us,
+    ):
+        sink.write("task_events", controller_event)
 
     observation, plan, outcome = run_single_window(window_id=WINDOW_ID, timestamp_us=timestamp_us, tasks=tasks)
     outcome["execution"] = {
@@ -80,6 +110,13 @@ def run_once_for_test(output_root: Path, config: Config | None = None) -> None:
     sink.write("window_observation", observation)
     sink.write("plan", plan)
     sink.write("outcome", outcome)
+    _write_controller_cycle_samples(
+        sink=sink,
+        experiment_id=experiment_id,
+        window_id=WINDOW_ID,
+        timestamp_us=timestamp_us,
+        period_target_us=runtime_config.scheduler.window_ms * 1_000,
+    )
 
     sink.write(
         "resource_samples",
@@ -125,18 +162,34 @@ def run_experiment(output_root: Path, config: Config) -> None:
                 }
             ]
 
-        tasks = [{"task_id": arrival["task_id"], "priority_class": "ELASTIC"} for arrival in arrivals]
+        tasks = [build_local_tool_task(arrival) for arrival in arrivals]
+        tasks.extend(build_controller_periodic_tasks(window_id=window_id, timestamp_us=timestamp_us))
         for arrival in arrivals:
-            sink.write("task_events", _task_event_from_arrival(experiment_id, arrival))
+            sink.write("task_events", build_local_tool_task_event(experiment_id, arrival))
+        for controller_event in build_controller_task_events(
+            experiment_id=experiment_id,
+            window_id=window_id,
+            timestamp_us=timestamp_us,
+        ):
+            sink.write("task_events", controller_event)
 
         observation, plan, outcome = run_single_window(
             window_id=window_id,
             timestamp_us=timestamp_us,
             tasks=tasks,
         )
+        if _OFFLINE_FALLBACK_EXECUTION_MARKER is not None:
+            outcome["execution"] = dict(_OFFLINE_FALLBACK_EXECUTION_MARKER)
         sink.write("window_observation", observation)
         sink.write("plan", plan)
         sink.write("outcome", outcome)
+        _write_controller_cycle_samples(
+            sink=sink,
+            experiment_id=experiment_id,
+            window_id=window_id,
+            timestamp_us=timestamp_us,
+            period_target_us=config.scheduler.window_ms * 1_000,
+        )
         sink.write(
             "resource_samples",
             make_resource_sample(
@@ -147,8 +200,36 @@ def run_experiment(output_root: Path, config: Config) -> None:
         )
 
 
+def _configure_gpu_provider_environment(config: Config) -> None:
+    if config.vee.gpu.provider != "hami-core":
+        return
+
+    configured = os.environ.get("HAMI_CORE_LIB")
+    if configured:
+        lib_path = Path(configured).resolve()
+    else:
+        if DEFAULT_HAMI_CORE_LIB.is_file():
+            lib_path = DEFAULT_HAMI_CORE_LIB.resolve()
+        else:
+            lib_path = LEGACY_HAMI_CORE_LIB.resolve()
+    if not lib_path.is_file():
+        raise RuntimeError(f"hami-core library not found: {lib_path}")
+
+    os.environ["HAMI_CORE_LIB"] = str(lib_path)
+    preload = os.environ.get("LD_PRELOAD", "").strip()
+    if not preload:
+        os.environ["LD_PRELOAD"] = str(lib_path)
+        return
+
+    entries = preload.split(":")
+    if str(lib_path) not in entries:
+        os.environ["LD_PRELOAD"] = f"{lib_path}:{preload}"
+
+
 def run_stepped_experiment(output_root: Path, config: Config) -> None:
     from gazebo.sim_stepper import SimStepper
+
+    _configure_gpu_provider_environment(config)
 
     experiment_id = make_experiment_id()
     sink = TraceSink(root_dir=output_root, experiment_id=experiment_id)
@@ -195,6 +276,17 @@ def run_stepped_experiment(output_root: Path, config: Config) -> None:
 
     stepper = SimStepper(config.sim.world_name, config.sim.physics_step_ms)
     sampler = RealResourceSampler(sample_interval_ms=config.scheduler.window_ms)
+    controller_cycle_source = None
+    try:
+        controller_cycle_source = TopicControllerCycleSource(topic="/controller_cycle_metrics")
+    except Exception:
+        warnings.warn(
+            "Controller cycle ROS topic source unavailable; "
+            "using fallback controller cycle records.",
+            RuntimeWarning,
+            stacklevel=1,
+        )
+
     loop = SteppedExperimentLoop(
         stepper=stepper,
         sampler=sampler,
@@ -203,15 +295,20 @@ def run_stepped_experiment(output_root: Path, config: Config) -> None:
         config=config,
         experiment_id=experiment_id,
         execution_adapter=execution_adapter,
+        controller_cycle_source=controller_cycle_source,
     )
     try:
         loop.run()
     finally:
         stepper.close()
         cmd_vel_publisher.close()
+        if controller_cycle_source is not None:
+            controller_cycle_source.close()
 
 
 def main() -> None:
+    global _OFFLINE_FALLBACK_EXECUTION_MARKER
+
     config = load_config(CONFIG_PATH)
     try:
         run_stepped_experiment(output_root=config.trace.root_dir, config=config)
@@ -222,7 +319,15 @@ def main() -> None:
             RuntimeWarning,
             stacklevel=1,
         )
-        run_experiment(output_root=config.trace.root_dir, config=config)
+        _OFFLINE_FALLBACK_EXECUTION_MARKER = {
+            "mode": "offline_fallback",
+            "success": False,
+            "reason": "gz_transport_unavailable",
+        }
+        try:
+            run_experiment(output_root=config.trace.root_dir, config=config)
+        finally:
+            _OFFLINE_FALLBACK_EXECUTION_MARKER = None
 
 
 if __name__ == "__main__":

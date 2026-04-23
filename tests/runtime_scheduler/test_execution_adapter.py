@@ -12,7 +12,7 @@ class FakeCmdVelPublisher:
         self.calls.append(("stop", 0.0, 0.0))
 
 
-def test_execute_window_run_maps_lane_velocity_and_resumes_task() -> None:
+def test_execute_window_run_maps_cpu_lane_to_high_velocity_and_resumes_task() -> None:
     publisher = FakeCmdVelPublisher()
     ensured: list[list[str]] = []
     resumed: list[str] = []
@@ -23,7 +23,7 @@ def test_execute_window_run_maps_lane_velocity_and_resumes_task() -> None:
         ensure=ensured.append,
         resume=resumed.append,
         stop=stopped.append,
-        velocity_mapping={"CPU_LANE": (0.25, 0.1), "fallback": (0.0, 0.0)},
+        velocity_mapping={"high": (0.25, 0.1), "fallback": (0.0, 0.0)},
     )
 
     result = adapter.execute_window(
@@ -93,7 +93,7 @@ def test_execute_window_unknown_lane_uses_fallback_velocity() -> None:
         ensure=ensured.append,
         resume=resumed.append,
         stop=stopped.append,
-        velocity_mapping={"CRITICAL_LANE": (0.4, 0.2), "fallback": (0.1, -0.1)},
+        velocity_mapping={"critical": (0.4, 0.2), "fallback": (0.1, -0.1)},
     )
 
     result = adapter.execute_window(
@@ -106,3 +106,55 @@ def test_execute_window_unknown_lane_uses_fallback_velocity() -> None:
     assert stopped == []
     assert publisher.calls == [("motion", 0.1, -0.1)]
     assert result["cmd_vel"] == {"type": "motion", "vx": 0.1, "wz": -0.1}
+
+
+def test_execute_window_decision_run_works_when_action_absent() -> None:
+    publisher = FakeCmdVelPublisher()
+    ensured: list[list[str]] = []
+    resumed: list[str] = []
+    stopped: list[str] = []
+
+    adapter = ExecutionAdapter(
+        cmd_vel_publisher=publisher,
+        ensure=ensured.append,
+        resume=resumed.append,
+        stop=stopped.append,
+        velocity_mapping={"high": (0.3, 0.0), "fallback": (0.0, 0.0)},
+    )
+
+    result = adapter.execute_window(
+        task_actions=[{"task_id": "task-decision", "decision": "RUN", "lane": "CPU_LANE"}],
+        now_ms=1000,
+    )
+
+    assert ensured == [["task-decision"]]
+    assert resumed == ["task-decision"]
+    assert stopped == []
+    assert publisher.calls == [("motion", 0.3, 0.0)]
+    assert result["cmd_vel"] == {"type": "motion", "vx": 0.3, "wz": 0.0}
+
+
+def test_execute_window_run_maps_critical_lane_to_critical_velocity() -> None:
+    publisher = FakeCmdVelPublisher()
+    ensured: list[list[str]] = []
+    resumed: list[str] = []
+    stopped: list[str] = []
+
+    adapter = ExecutionAdapter(
+        cmd_vel_publisher=publisher,
+        ensure=ensured.append,
+        resume=resumed.append,
+        stop=stopped.append,
+        velocity_mapping={"critical": (0.6, 0.4), "fallback": (0.0, 0.0)},
+    )
+
+    result = adapter.execute_window(
+        task_actions=[{"task_id": "task-critical", "action": "RUN", "lane": "CRITICAL_LANE"}],
+        now_ms=1001,
+    )
+
+    assert ensured == [["task-critical"]]
+    assert resumed == ["task-critical"]
+    assert stopped == []
+    assert publisher.calls == [("motion", 0.6, 0.4)]
+    assert result["cmd_vel"] == {"type": "motion", "vx": 0.6, "wz": 0.4}

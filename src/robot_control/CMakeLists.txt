@@ -7,4 +7,9 @@ install(DIRECTORY config launch
   DESTINATION share/${PROJECT_NAME}
 )
 
+install(PROGRAMS
+  scripts/controller_cycle_metrics_publisher
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

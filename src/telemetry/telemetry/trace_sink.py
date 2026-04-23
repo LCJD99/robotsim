@@ -12,6 +12,7 @@ KIND_TO_FILENAME = {
     "outcome": "outcome.jsonl",
     "task_events": "task_events.jsonl",
     "resource_samples": "resource_samples.jsonl",
+    "controller_cycle_samples": "controller_cycle_samples.jsonl",
 }
 
 

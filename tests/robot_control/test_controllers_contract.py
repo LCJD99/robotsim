@@ -21,3 +21,13 @@ def test_robot_control_launch_wires_robot_description_for_controller_manager():
     assert "robot_state_publisher" in launch_text
     assert "~/robot_description" in launch_text
     assert "/robot_description" in launch_text
+    assert "controller_cycle_metrics_publisher" in launch_text
+    assert "/controller_cycle_metrics" in launch_text
+
+
+def test_robot_control_package_includes_cycle_metrics_dependencies():
+    package_xml = Path("src/robot_control/package.xml").read_text(encoding="utf-8")
+
+    assert "<exec_depend>rclpy</exec_depend>" in package_xml
+    assert "<exec_depend>std_msgs</exec_depend>" in package_xml
+    assert "<exec_depend>rosgraph_msgs</exec_depend>" in package_xml

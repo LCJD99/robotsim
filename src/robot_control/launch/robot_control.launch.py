@@ -53,4 +53,28 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
     )
 
-    return LaunchDescription([robot_state_publisher, controller_manager, joint_state_broadcaster, diff_drive_controller])
+    controller_cycle_metrics_publisher = Node(
+        package="robot_control",
+        executable="controller_cycle_metrics_publisher",
+        output="screen",
+        parameters=[
+            {
+                "topic": "/controller_cycle_metrics",
+                "period_target_us": 20_000,
+                "controller_names": [
+                    "joint_state_broadcaster",
+                    "diff_drive_controller",
+                ],
+            }
+        ],
+    )
+
+    return LaunchDescription(
+        [
+            robot_state_publisher,
+            controller_manager,
+            joint_state_broadcaster,
+            diff_drive_controller,
+            controller_cycle_metrics_publisher,
+        ]
+    )

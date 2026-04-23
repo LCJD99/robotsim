@@ -35,5 +35,4 @@ def test_vee_adapter_planned_commands_match_profile():
         "echo 200000 100000 > /sys/fs/cgroup/vee/cpu.max",
         "echo 6G > /sys/fs/cgroup/vee/memory.high",
         "echo 8G > /sys/fs/cgroup/vee/memory.max",
-        "hami-core apply --group vee",
     ]
